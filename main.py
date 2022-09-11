@@ -62,6 +62,10 @@ class Tweet(BaseModel):
     updated_at: Optional[datetime] = Field(default=None)
     by: User = Field(...)
 
+class LoginOut(BaseModel):
+    email: EmailStr = Field(...)
+    message: str = Field(default="Login Succesfully!")
+
 # Aditional function 
 
 def read_data(file):
@@ -144,13 +148,34 @@ def signup(user: UserRegister = Body(...)):
 ### Login a user
 @app.post(
     path="/login",
-    response_model=User,
+    response_model= LoginOut,
     status_code= status.HTTP_200_OK,
     summary= "Login a User",
     tags=["Users"]
 )
-def login():
-    pass
+def login(
+    email: EmailStr = Form(...),
+    password: str = Form(...)
+):
+    """
+    Login
+    
+    This path operation login a Person in the app
+
+    Parameters:
+        -Request body parameter
+            - email: EmailStr
+            - password: str
+    
+    Returns a LoginOut model with username and message
+
+    """
+    data = read_data("users")
+    for user in data:
+        if email == user["email"] and password == user["password"]:
+            return LoginOut(email=email)
+    else:
+        return LoginOut(email=email, message="Login Unsuccesfully!")
 
 ### Show all users
 @app.get(
@@ -177,20 +202,40 @@ def show_all_users():
         -birth_date: datetime
     
     """
-    with open("users.json", "r", encoding="utf-8") as f:
-        results = json.loads(f.read())
-        return results
+    return read_data("users")
 
 ### Show a user
 @app.get(
     path="/users/{user_id}",
     response_model=User,
     status_code= status.HTTP_200_OK,
-    summary= "Show all users",
+    summary= "Show a user",
     tags=["Users"]
 )
-def show_a_user():
-    pass
+def show_a_user(
+    user_id: UUID = Path(
+        ...,
+        title="Tweet ID",
+        description="This is the tweet ID"    
+    )
+):
+    """
+    Show a user
+    
+    This path operation show if a user exist in the app
+
+    Parameters:
+        - user_id: UUID
+
+    Returns a json with user data:
+        -user_id: UUID
+        -email: EmailStr
+        -first_name: str
+        -last_name: str
+        -birth_date: datetime
+    
+    """
+    return show_data("users", user_id, "user")
 
 ### Delete a user
 @app.delete(
@@ -200,8 +245,32 @@ def show_a_user():
     summary= "Delete a User",
     tags=["Users"]
 )
-def delete_a_user():
-    pass
+def delete_a_user(
+    user_id: UUID = Path(
+        ...,
+        title="User ID",
+        description="This is the user ID"    
+        )
+):
+    """
+    Delete a user
+    
+    This path operation delete a user information in the app
+
+    Parameters:
+        - user_id: UUID
+        - Request Body Parameters:
+            - **user: UserRegister**-> A user model with user_id, email, first name, last name, birth date and password
+
+    Returns a json with deleted user data:
+        -user_id: UUID
+        -email: EmailStr
+        -first_name: str
+        -last_name: str
+        -birth_date: datetime
+    
+    """
+    return delete_data("users", user_id, "user")
 
 ### Update a user
 @app.put(
@@ -211,8 +280,47 @@ def delete_a_user():
     summary= "Update a User",
     tags=["Users"]
 )
-def update_a_user():
-    pass
+def update_a_user(
+    user_id: UUID = Path(
+        ...,
+        title="User ID",
+        description="This is the user ID"    
+        ),
+    user: UserRegister = Body(...)
+):
+    """
+    Update a user
+    
+    This path operation update a user information in the app and save in the database
+
+    Parameters:
+        - user_id: UUID
+        - Request Body Parameters:
+            - **user: UserRegister**-> A user model with user_id, email, first name, last name, birth date and password
+
+    Returns a json with the basic user information:
+        -user_id: UUID
+        -email: EmailStr
+        -first_name: str
+        -last_name: str
+        -birth_date: datetime
+    
+    """
+    user_id = str(user_id)
+    user_dict = user.dict()
+    user_dict["user_id"] = str(user_dict["user_id"])
+    user_dict["birth_date"] = str(user_dict["birth_date"])
+    results = read_data("users")
+    for user in results:
+        if user['user_id'] == user_id:
+            results[results.index(user)] = user_dict
+            overwrite_data("users", results)
+            return user
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This user doesn't exist!"
+        )
 
 ## Tweets
 
@@ -329,12 +437,12 @@ def delete_a_tweet(tweet_id: UUID = Path(
     """
     Delete a tweet
     
-    This path operation delete a tweet in the app
+    This path operation deleted a tweet in the app
 
     Parameters:
         - tweet_id: UUID
 
-    Returns a json with tweet data:
+    Returns a json with delete tweet data:
         - tweet_id: UUID 
         - content: str 
         - created_at: datetime 
