@@ -14,7 +14,7 @@ from pydantic import EmailStr
 # FastAPI
 from fastapi import FastAPI
 from fastapi import status
-from fastapi import Body
+from fastapi import Body, Path, HTTPException, Form
 
 app = FastAPI()
 
@@ -62,6 +62,44 @@ class Tweet(BaseModel):
     updated_at: Optional[datetime] = Field(default=None)
     by: User = Field(...)
 
+# Aditional function 
+
+def read_data(file):
+    with open(f"{file}.json", "r+", encoding="utf-8") as f:
+        return json.loads(f.read()) # Convertirlo a simil de json
+
+def overwrite_data(file, results):
+    with open(f"{file}.json", "w", encoding="utf-8") as f:
+        f.seek(0)  # Moverte al inicio del archivo
+        f.write(json.dumps(results))  # Convirtiendo de una list_dic a un json
+
+def show_data(file, id, info):
+    results = read_data(file)
+    id = str(id)
+    for data in results:
+        if data[f"{info}_id"] == id:
+            return data
+    else:
+        raise HTTPException(
+            status_code= status.HTTP_404_NOT_FOUND,
+            detail= f"¡This {info} doesn't exist!"
+
+        )
+
+def delete_data(file, id, info):
+    results = read_data(file)
+    id = str(id)
+    for data in results:
+        if data[f"{info}_id"] == id:
+            results.remove(data)
+            overwrite_data(file,results)
+            return data
+    else:
+        raise HTTPException(
+            status_code= status.HTTP_404_NOT_FOUND,
+            detail= f"¡This {info} doesn't exist!"
+
+        )
 
 # Path Operations
 
@@ -156,7 +194,7 @@ def show_a_user():
 
 ### Delete a user
 @app.delete(
-    path="/user/{user_id}/delete",
+    path="/users/{user_id}/delete",
     response_model=User,
     status_code= status.HTTP_200_OK,
     summary= "Delete a User",
@@ -167,7 +205,7 @@ def delete_a_user():
 
 ### Update a user
 @app.put(
-    path="/user/{user_id}/update",
+    path="/users/{user_id}/update",
     response_model=User,
     status_code= status.HTTP_200_OK,
     summary= "Update a User",
@@ -175,7 +213,6 @@ def delete_a_user():
 )
 def update_a_user():
     pass
-
 
 ## Tweets
 
@@ -188,7 +225,24 @@ def update_a_user():
     tags=["Tweets"]    
 )
 def home():
-    return {"Twitter API": "Working!"}
+    """
+    Show all tweets
+    
+    This path operation shows all tweets in the app
+
+    Parameters:
+        -
+
+    Returns a json list with all tweets in the app, with the following keys:
+        - tweet_id: UUID 
+        - content: str 
+        - created_at: datetime 
+        - updated_at: Optional[datetime] 
+        - by: User 
+    
+    """
+    
+    return read_data("tweets")
 
 ### Post a tweet
 @app.post(
@@ -216,18 +270,17 @@ def post(tweet: Tweet = Body(...)):
         -by: User
          
     """
-    with open("tweets.json", "r+", encoding="utf-8") as f:
-        results = json.loads(f.read())
-        tweet_dict = tweet.dict()
-        tweet_dict["tweet_id"] = str(tweet_dict["tweet_id"])
-        tweet_dict["created_at"] = str(tweet_dict["created_at"])
-        tweet_dict["updated_at"] = str(tweet_dict["updated_at"])
-        tweet_dict["by"]["user_id"] = str(tweet_dict["by"]["user_id"])
-        tweet_dict["by"]["birth_date"] = str(tweet_dict["by"]["birth_date"])
-        results.append(tweet_dict)
-        f.seek(0)
-        f.write(json.dumps(results))
-        return tweet
+    
+    results = read_data("tweets")
+    tweet_dict = tweet.dict()
+    tweet_dict["tweet_id"] = str(tweet_dict["tweet_id"])
+    tweet_dict["created_at"] = str(tweet_dict["created_at"])
+    tweet_dict["updated_at"] = str(tweet_dict["updated_at"])
+    tweet_dict["by"]["user_id"] = str(tweet_dict["by"]["user_id"])
+    tweet_dict["by"]["birth_date"] = str(tweet_dict["by"]["birth_date"])
+    results.append(tweet_dict)
+    overwrite_data("tweets", results)
+    return tweet
 
 ### Show a tweet
 @app.get(
@@ -237,8 +290,28 @@ def post(tweet: Tweet = Body(...)):
     summary= "Show a tweet",
     tags=["Tweets"]
 )
-def show_a_tweet():
-    pass
+def show_a_tweet(tweet_id: UUID = Path(
+    ...,
+    title="Tweet ID",
+    description="This is the tweet ID"    
+    )):
+    """
+    Show a tweet
+    
+    This path operation show if a tweet exist in the app
+
+    Parameters:
+        - tweet_id: UUID
+
+    Returns a json with tweet data:
+        - tweet_id: UUID 
+        - content: str 
+        - created_at: datetime 
+        - updated_at: Optional[datetime] 
+        - by: User 
+    
+    """
+    return show_data("tweets", tweet_id, "tweet")
 
 ### Delete a tweet
 @app.delete(
@@ -248,8 +321,28 @@ def show_a_tweet():
     summary= "Delete a tweet",
     tags=["Tweets"]
 )
-def delete_a_tweet():
-    pass
+def delete_a_tweet(tweet_id: UUID = Path(
+    ...,
+    title="Tweet ID",
+    description="This is the tweet ID"    
+    )):
+    """
+    Delete a tweet
+    
+    This path operation delete a tweet in the app
+
+    Parameters:
+        - tweet_id: UUID
+
+    Returns a json with tweet data:
+        - tweet_id: UUID 
+        - content: str 
+        - created_at: datetime 
+        - updated_at: Optional[datetime] 
+        - by: User 
+    
+    """
+    return delete_data("tweets", tweet_id, "tweet")
 
 ### Update a tweet
 @app.put(
@@ -259,8 +352,50 @@ def delete_a_tweet():
     summary= "Update a tweet",
     tags=["Tweets"]
 )
-def update_a_tweet():
-    pass
+def update_a_tweet(
+    tweet_id: UUID = Path(
+        ...,
+        title="Tweet ID",
+        description="This is the tweet ID"    
+        ),
+    content: str = Form(
+        ...,
+        min_length=1,
+        max_length=256,
+        title="Tweet content",
+        description="This is the update content of the tweet"
+    )
+):
+    """
+    Update a tweet
+    
+    This path operation update a tweet information in the app and save in the database
 
+    Parameters:
+        - tweet_id: UUID
+        - content: str
+
+    Returns a json with tweet data:
+        - tweet_id: UUID 
+        - content: str 
+        - created_at: datetime 
+        - updated_at: Optional[datetime] 
+        - by: User 
+    
+    """
+    tweet_id = str(tweet_id)
+    results = read_data("tweets")
+    for tweet in results:
+        if tweet['tweet_id'] == tweet_id:
+            tweet['content'] = content
+            tweet['updated_at'] = str(datetime.now())
+            print(tweet)
+            overwrite_data("tweets", results)
+            return tweet
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This tweet doesn't exist!"
+        )
 
 
